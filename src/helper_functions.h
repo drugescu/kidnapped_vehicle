@@ -21,6 +21,10 @@
 const double M_PI = 3.14159265358979323846;
 #endif
 
+#ifndef EPS
+const double EPS = 0.000001;
+#endif
+
 /**
  * Struct representing one position/control measurement.
  */
@@ -48,6 +52,33 @@ struct LandmarkObs {
   double y;   // Local (vehicle coords) y position of landmark observation [m]
 };
 
+
+/**
+ * Computes the weight of a particle.
+ * @param (x_m,y_m) x and y coordinates in map coordinates
+ * @param (l_x,l_y) x and y coordinates of landmark
+ * @param (sig_x,sig_y) x and y sigmas
+ * @output (Double) Weight of particle.
+ */
+inline double weight(double x_m, double y_m, 
+					 double l_x, double l_y, 
+					 double sig_x, double sig_y ) {
+	auto x_d = pow(x_m - l_x, 2);
+	auto y_d = pow(y_m - l_y, 2);
+	
+	auto sig_x_d = pow(sig_x, 2);
+	auto sig_y_d = pow(sig_y, 2);
+	
+	// Calculate exponent
+	auto exponent = exp(  -(x_d / (2.0 * sig_x_d) + (y_d / (2.0 * sig_y_d)))  );
+	
+	// Calculate normalization term
+	auto gauss_norm = (1.0 / (2.0 * M_PI * sig_x * sig_y));
+	
+	// Return weight
+	return (gauss_norm * exponent * 1.0);
+}
+
 /**
  * Computes the Euclidean distance between two 2D points.
  * @param (x1,y1) x and y coordinates of first point
@@ -57,6 +88,7 @@ struct LandmarkObs {
 inline double dist(double x1, double y1, double x2, double y2) {
   return sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
+
 
 /**
  * Computes the error between ground truth and particle filter data.
