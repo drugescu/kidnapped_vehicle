@@ -63,6 +63,8 @@ struct LandmarkObs {
 inline double weight(double x_m, double y_m, 
 					 double l_x, double l_y, 
 					 double sig_x, double sig_y ) {
+	
+	// Lesson 5 - Implementation of a Particle Filter - Particle Weights
 	auto x_d = pow(x_m - l_x, 2);
 	auto y_d = pow(y_m - l_y, 2);
 	
