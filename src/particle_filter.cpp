@@ -1,3 +1,12 @@
+/**
+ * particle_filter.cpp
+ *
+ * Created on: Dec 12, 2016
+ * Author: Tiffany Huang
+ * 
+ * Changed by Dragos Rugescu on Dec 12, 2019
+ */
+
 #include "particle_filter.h"
 
 #include <math.h>
