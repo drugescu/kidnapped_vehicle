@@ -24,7 +24,8 @@ using std::vector;
 using util::lang::range;
 using util::lang::indices;
 
-#define 	NUM_PART 	   50
+#define 	NUM_PART 	    7
+//#define 	NUM_PART 	    50
 
 #define 	X_INDEX			0
 #define 	Y_INDEX			1
@@ -87,20 +88,29 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
 	
 	std::default_random_engine gen;
 	
-	for (auto i in range(0, num_particles)) {
-		
-		auto& p = particles[i];
-		
-		if (yaw_rate*yaw_rate <= EPS*EPS) {
+	for (auto& p in particles) {
+		if (yaw_rate * yaw_rate <= EPS * EPS) {
 			p.x += velocity * delta_t * cos(p.theta);
 			p.y += velocity * delta_t * sin(p.theta);
 		}
 		else {
+			// Add measurements - equations from lesson 5.9 used
+			
+			// xf = x0 + v/.th * ( sin(th0 + .th*dt) - sin(th0) )
+			// yf = y0 + ( sin(th) * x_obs + cos(th) * y_obs )
+			// .th = th0 + .th*dt
+			//
+			// Where .th = theta_dot, derivative of angle with respect to time,
+			//		AKA rate of change of angle with respecti to time
+			//		in our situation this is the << yaw_rate >>
+			//
+			
 			p.x += velocity / yaw_rate * (sin(p.theta + yaw_rate * delta_t) - sin(p.theta));
 			p.y += velocity / yaw_rate * (cos(p.theta) - cos(p.theta + yaw_rate * delta_t));
 			p.theta += yaw_rate * delta_t;
 		}
 		
+		// Add gaussian noise
 		p.x += normal_x(gen);
 		p.y += normal_y(gen);
 		p.theta += normal_th(gen);
@@ -125,23 +135,19 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
 		// Sort ascending according to distance
 		// Not efficient, should keep "o" copies of the predictions 
 		//   and keep them sorted, i.e. trace space for time
-		// Change this to std::get_minimum!
-		sort(
-			 predicted.begin(),
-			 predicted.end(),
-		     [&o]
-		     (const LandmarkObs& p1, const LandmarkObs& p2) 
-		     {
+		auto&& minimum_p = *(std::min_element(
+			predicted.begin(),
+			predicted.end(),
+			[&o]
+			(const LandmarkObs& p1, const LandmarkObs& p2)
+			{
 			     auto dist1 = dist(o.x, o.y, p1.x, p1.y); 
 			     auto dist2 = dist(o.x, o.y, p2.x, p2.y);
 			     if (dist1 < dist2) return true;
 			     return false;
-		     } 
-		);
+			} ));
 		
-		// Pick front of sorted vector, will have minimum distance
-		auto&& minimum_p = predicted.front();
-		
+		// Store information in id field
 		if (predicted.size() != 0)
 			o.id = minimum_p.id;
 		else
@@ -175,17 +181,16 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			if(dist(p.x, p.y, l.x_f, l.y_f) <= abs(sensor_range))
 				near.push_back( LandmarkObs { l.id_i, l.x_f, l.y_f } );
 		}
-		//for (auto n in near) std::cout << "near = " << n.id << "," << n.x << "," << n.y << "\n";
 
 		// Convert to vehicle space
 		auto tf = *(new vector<LandmarkObs>());
 		for (auto&& o in observations) {
 			tf.push_back( LandmarkObs 
 				{ 	o.id, 
-					(double)cos(p.theta) * o.x - sin(p.theta) * o.y + p.x,
-					(double)sin(p.theta) * o.x + cos(p.theta) * o.y + p.y  } );
+					// Homogenous Rot + Trans (eqn 3.33), also lesson 5.17
+					(double) o.x * cos(p.theta) - o.y * sin(p.theta) + p.x,
+					(double) o.x * sin(p.theta) + o.y * cos(p.theta) + p.y  } );
 		}
-		//for (auto n in tf) std::cout << "tf = " << n.id << "," << n.x << "," << n.y << "\n";
 		
 		// dataAssociation - find nearst predictions to each obs
 		dataAssociation(near, tf);
@@ -193,21 +198,20 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		// Set weights
 		p.weight = 1.0f;
 		for(auto m in tf) {
-			// Find current obs m.id in the near set
+			// Find current obs m.id in the near set - we have stored it in the id field
 			auto it = std::find_if(
 				near.begin(), 
 				near.end(),
 				[m](const LandmarkObs& n) { return n.id == m.id; } );
 			
-			// Get weight
-			auto w = (double) weight(m.x, m.y, (*it).x, (*it).y, std_landmark[X_INDEX], std_landmark[Y_INDEX]);
-			double x_diff_squared = pow(m.x - (*it).x, 2);
-	      	double y_diff_squared = pow(m.y - (*it).y, 2);
-			//auto w = (double) ( 1/(2*M_PI*std_landmark[X_INDEX]*std_landmark[Y_INDEX])) * exp( -(x_diff_squared/(2*std_landmark[X_INDEX]*std_landmark[X_INDEX]) + (y_diff_squared/(2*std_landmark[Y_INDEX]*std_landmark[Y_INDEX])) ) );
+			// Get weight and multiply with it
+			auto w = (double) weight(m.x, m.y, 
+									(*it).x, (*it).y, 
+									std_landmark[X_INDEX], 
+									std_landmark[Y_INDEX]);
 			if (w > EPS) p.weight *= w; else p.weight *= EPS;
 			
 		}
-		//for (auto n in particles) std::cout << "weights = " << n.weight << "\n";
 	}
 	
 	
@@ -217,7 +221,7 @@ void ParticleFilter::resample() {
   /**
    * TODO: Resample particles with replacement with probability proportional 
    *   to their weight. 
-   * NOTE: You may find std::discrete_distribution helpful here.
+   * NOTE: You may find std::	 helpful here.
    *   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
    */
    
@@ -236,25 +240,25 @@ void ParticleFilter::resample() {
 			[](const Particle& p1, const Particle& p2) { return p1.weight < p2.weight;	} 
 		)).weight; 
 
-	auto uniform_w = std::uniform_real_distribution<double> (0.0, 2 * maximum_weight);
+	auto uniform_w = std::uniform_real_distribution<double> (0.0, maximum_weight);
 	auto uniform_i = std::uniform_int_distribution<  int  > (  0, particles.size() - 1);
 	
-	// Piechart
+	// Piechart sampling - from robot lesson
 	auto beta = 0.0;
-	auto picked_index = uniform_i(gen);
+	auto index = uniform_i(gen);
 	auto resampled = *(new vector<Particle>());
 
 	// Spin wheel, clamp index, add to resampled
 	for (auto p in particles) {
 		beta += uniform_w(gen);
-		while (beta > weights[picked_index]) {
-			beta -= weights[picked_index];
+		while (beta > weights[index]) {
+			beta -= weights[index];
 			
 			// Wrap around
-			picked_index = (picked_index + 1) % particles.size();
+			index = (index + 1) % particles.size();
 		}
 		
-		resampled.push_back(particles[picked_index]);
+		resampled.push_back(particles[index]);
 	}
 	
 	// Set particles to new arrangement
